@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Stem -->
+  <path d="M200 400 Q200 300 200 250" fill="none" stroke="#228B22" stroke-width="10"/>
+  
+  <!-- Leaves -->
+  <path d="M200 320 Q150 300 140 340 Q160 360 200 340" fill="#32CD32"/>
+  <path d="M200 350 Q250 330 260 370 Q240 390 200 370" fill="#32CD32"/>
+  
+  <!-- Petals -->
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF69B4"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF69B4" transform="rotate(45 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF69B4" transform="rotate(90 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF69B4" transform="rotate(135 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF1493" transform="rotate(22.5 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF1493" transform="rotate(67.5 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF1493" transform="rotate(112.5 200 200)"/>
+  <ellipse cx="200" cy="150" rx="30" ry="60" fill="#FF1493" transform="rotate(157.5 200 200)"/>
+  
+  <!-- Center -->
+  <circle cx="200" cy="200" r="35" fill="#FFD700"/>
+  <circle cx="190" cy="190" r="5" fill="#FFA500"/>
+  <circle cx="210" cy="190" r="5" fill="#FFA500"/>
+  <circle cx="200" cy="210" r="5" fill="#FFA500"/>
+  <circle cx="185" cy="205" r="4" fill="#FFA500"/>
+  <circle cx="215" cy="205" r="4" fill="#FFA500"/>
+</svg>
