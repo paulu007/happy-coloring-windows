@@ -1,240 +1,67 @@
-name: Build Windows Installer
+name: Build Windows Only
 
 on:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - 'v*'
-  
+    branches: [main, master]
+    tags: ['v*']
   pull_request:
-    branches:
-      - main
-      - master
-  
+    branches: [main, master]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g., 1.0.0)'
-        required: false
-        default: '1.0.0'
 
 permissions:
   contents: write
 
-env:
-  APP_NAME: HappyColor
-  APP_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
-
 jobs:
-  build-windows:
-    name: Build Windows Executable
+  build:
     runs-on: windows-latest
     
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Get Version from pubspec.yaml
-        id: version
-        run: |
-          $content = Get-Content pubspec.yaml
-          $version = ($content | Select-String -Pattern "^version:\s*(.+)$").Matches.Groups[1].Value.Split('+')[0]
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-          echo "App Version: $version"
-        shell: powershell
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.16.0'
+          flutter-version: '3.19.0'
           channel: 'stable'
           cache: true
-          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
-          cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
 
-      - name: Flutter Doctor
+      - name: Configure Flutter
+        run: |
+          flutter config --enable-windows-desktop
+          flutter config --no-enable-android
+          flutter config --no-enable-ios
+          flutter config --no-enable-web
+          flutter config --no-enable-linux-desktop
+          flutter config --no-enable-macos-desktop
+
+      - name: Doctor
         run: flutter doctor -v
 
-      - name: Enable Windows Desktop
-        run: flutter config --enable-windows-desktop
+      - name: Clean
+        run: flutter clean
 
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build Windows Release
-        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }}
+      - name: Build
+        run: flutter build windows --release
 
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: build/windows/x64/runner/Release/
-          retention-days: 1
-
-  create-installer:
-    name: Create Windows Installer
-    runs-on: windows-latest
-    needs: build-windows
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build
-          path: build/windows/x64/runner/Release/
-
-      - name: List Downloaded Files
-        run: |
-          dir build\windows\x64\runner\Release
-        shell: cmd
-
-      # Install Inno Setup for creating installer
-      - name: Install Inno Setup
-        run: |
-          choco install innosetup -y
-        shell: cmd
-
-      # Create Inno Setup script
-      - name: Create Inno Setup Script
-        run: |
-          @"
-          #define MyAppName "Happy Color"
-          #define MyAppVersion "${{ needs.build-windows.outputs.version }}"
-          #define MyAppPublisher "Your Company Name"
-          #define MyAppURL "https://github.com/${{ github.repository }}"
-          #define MyAppExeName "happy_color_app.exe"
-
-          [Setup]
-          AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-          AppName={#MyAppName}
-          AppVersion={#MyAppVersion}
-          AppPublisher={#MyAppPublisher}
-          AppPublisherURL={#MyAppURL}
-          AppSupportURL={#MyAppURL}
-          AppUpdatesURL={#MyAppURL}
-          DefaultDirName={autopf}\{#MyAppName}
-          DisableProgramGroupPage=yes
-          LicenseFile=
-          OutputDir=installer
-          OutputBaseFilename=HappyColor-Setup-{#MyAppVersion}
-          SetupIconFile=
-          Compression=lzma
-          SolidCompression=yes
-          WizardStyle=modern
-          ArchitecturesInstallIn64BitMode=x64
-
-          [Languages]
-          Name: "english"; MessagesFile: "compiler:Default.isl"
-
-          [Tasks]
-          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-
-          [Files]
-          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-          [Icons]
-          Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-
-          [Run]
-          Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-          "@ | Out-File -FilePath "installer_script.iss" -Encoding UTF8
+      - name: Archive
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath HappyColor-Windows.zip
         shell: powershell
 
-      - name: Create Installer Directory
-        run: mkdir installer
-        shell: cmd
-
-      - name: Build Installer
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss
-        shell: powershell
-
-      - name: List Installer Output
-        run: dir installer
-        shell: cmd
-
-      - name: Upload Installer Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: happy-color-installer-${{ needs.build-windows.outputs.version }}
-          path: installer/*.exe
+          name: HappyColor-Windows
+          path: HappyColor-Windows.zip
           retention-days: 30
 
-  create-portable:
-    name: Create Portable ZIP
-    runs-on: windows-latest
-    needs: build-windows
-    
-    steps:
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build
-          path: HappyColor/
-
-      - name: Create Portable ZIP
-        run: |
-          Compress-Archive -Path HappyColor\* -DestinationPath HappyColor-Portable-${{ needs.build-windows.outputs.version }}.zip
-        shell: powershell
-
-      - name: Upload Portable ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: happy-color-portable-${{ needs.build-windows.outputs.version }}
-          path: HappyColor-Portable-*.zip
-          retention-days: 30
-
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [build-windows, create-installer, create-portable]
-    if: startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-      - name: Download Installer
-        uses: actions/download-artifact@v4
-        with:
-          name: happy-color-installer-${{ needs.build-windows.outputs.version }}
-          path: release/
-
-      - name: Download Portable ZIP
-        uses: actions/download-artifact@v4
-        with:
-          name: happy-color-portable-${{ needs.build-windows.outputs.version }}
-          path: release/
-
-      - name: List Release Files
-        run: ls -la release/
-
-      - name: Create Release
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          body: |
-            ## Happy Color ${{ needs.build-windows.outputs.version }}
-            
-            ### Downloads
-            - **Installer**: `HappyColor-Setup-${{ needs.build-windows.outputs.version }}.exe` - Full installer for Windows
-            - **Portable**: `HappyColor-Portable-${{ needs.build-windows.outputs.version }}.zip` - No installation required
-            
-            ### Requirements
-            - Windows 10/11 (64-bit)
-            
-            ### Installation
-            1. Download the installer or portable version
-            2. Run the installer or extract the ZIP file
-            3. Launch Happy Color and start coloring!
+          files: HappyColor-Windows.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}                  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
