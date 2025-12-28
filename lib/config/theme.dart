@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:ui' show FontFeature;  // Add this import
-import 'package:google_fonts/google_fonts.dart';
 import 'constants.dart';
-
-// ... rest of the file
 
 class AppTheme {
   static ThemeData get lightTheme {
@@ -14,19 +10,19 @@ class AppTheme {
         brightness: Brightness.light,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: const TextStyle(  // Use const TextStyle
-          fontFamily: 'Segoe UI',  // Windows system font
+        titleTextStyle: TextStyle(
+          fontFamily: 'Segoe UI',
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
       ),
-      textTheme: const TextTheme(  // Use default text theme
+      textTheme: const TextTheme(
         displayLarge: TextStyle(fontFamily: 'Segoe UI'),
         displayMedium: TextStyle(fontFamily: 'Segoe UI'),
         displaySmall: TextStyle(fontFamily: 'Segoe UI'),

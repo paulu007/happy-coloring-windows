@@ -113,3 +113,29 @@ lib/generated_plugin_registrant.dart
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 
 # End of https://www.toptal.com/developers/gitignore/api/flutter
+
+# Platforms not needed
+android/
+ios/
+linux/
+macos/
+web/
+
+# Dependencies
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+pubspec.lock
+
+# Build
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Misc
+*.log
+.DS_Store

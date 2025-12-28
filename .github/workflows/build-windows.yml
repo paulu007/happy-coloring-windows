@@ -17,11 +17,9 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      # 1. Checkout code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -29,8 +27,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # 3. Configure Flutter for Windows ONLY
-      - name: Configure Flutter
+      - name: Configure Flutter for Windows Only
         run: |
           flutter config --enable-windows-desktop
           flutter config --no-enable-android
@@ -39,29 +36,28 @@ jobs:
           flutter config --no-enable-linux-desktop
           flutter config --no-enable-macos-desktop
 
-      # 4. Show Flutter info
       - name: Flutter Doctor
         run: flutter doctor -v
 
-      # 5. Clean
-      - name: Clean
+      - name: Clean Project
         run: flutter clean
 
-      # 6. Get dependencies
+      - name: Remove pubspec.lock
+        run: |
+          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" }
+        shell: powershell
+
       - name: Get Dependencies
         run: flutter pub get
 
-      # 7. Build Windows
       - name: Build Windows Release
         run: flutter build windows --release
 
-      # 8. Create ZIP
       - name: Create ZIP Archive
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath HappyColor-Windows.zip
         shell: powershell
 
-      # 9. Upload artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -69,7 +65,6 @@ jobs:
           path: HappyColor-Windows.zip
           retention-days: 30
 
-      # 10. Create release (only for tags)
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1

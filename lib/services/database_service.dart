@@ -1,13 +1,26 @@
-import 'package:sqflite/sqflite.dart';
+import 'dart:io';
 import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../config/constants.dart';
 import '../models/user_progress.dart';
 
 class DatabaseService {
   static Database? _database;
   static final DatabaseService instance = DatabaseService._internal();
+  static bool _initialized = false;
 
   DatabaseService._internal();
+
+  /// Initialize the database factory for Windows
+  static Future<void> initializeFfi() async {
+    if (_initialized) return;
+    
+    // Initialize FFI for Windows/Linux
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    _initialized = true;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -16,11 +29,19 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final databasesPath = await getDatabasesPath();
-    final path = join(databasesPath, AppConstants.databaseName);
+    final Directory appDocDir = await getApplicationDocumentsDirectory();
+    final String dbFolder = join(appDocDir.path, 'HappyColor');
+    
+    // Create directory if it doesn't exist
+    final dbDir = Directory(dbFolder);
+    if (!await dbDir.exists()) {
+      await dbDir.create(recursive: true);
+    }
+
+    final String dbPath = join(dbFolder, AppConstants.databaseName);
 
     return await openDatabase(
-      path,
+      dbPath,
       version: AppConstants.databaseVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -156,5 +177,13 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return maps.first['value'] as String;
+  }
+
+  // ========== Close Database ==========
+  Future<void> close() async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
   }
 }
