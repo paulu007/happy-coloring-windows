@@ -39,5 +39,5 @@ flutter:
   uses-material-design: true
   
   assets:
-    - assets/images/
     - assets/svg/
+    # Remove assets/images/ if empty, or add files to it

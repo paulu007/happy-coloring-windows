@@ -1,32 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
-  <!-- Body -->
   <ellipse cx="200" cy="200" rx="15" ry="80" fill="#8B4513"/>
-  
-  <!-- Head -->
   <circle cx="200" cy="110" r="20" fill="#8B4513"/>
-  
-  <!-- Antennae -->
-  <path d="M190 95 Q180 70 170 60" fill="none" stroke="#8B4513" stroke-width="3"/>
-  <path d="M210 95 Q220 70 230 60" fill="none" stroke="#8B4513" stroke-width="3"/>
-  
-  <!-- Left Wing Top -->
   <path d="M185 160 Q100 100 80 160 Q60 220 120 200 Q160 190 185 200" fill="#FF6B6B"/>
-  
-  <!-- Left Wing Bottom -->
-  <path d="M185 200 Q120 210 100 260 Q80 320 140 300 Q180 280 185 240" fill="#4ECDC4"/>
-  
-  <!-- Right Wing Top -->
   <path d="M215 160 Q300 100 320 160 Q340 220 280 200 Q240 190 215 200" fill="#FF6B6B"/>
-  
-  <!-- Right Wing Bottom -->
-  <path d="M215 200 Q280 210 300 260 Q320 320 260 300 Q220 280 215 240" fill="#4ECDC4"/>
-  
-  <!-- Wing Patterns Left -->
   <circle cx="130" cy="150" r="15" fill="#FFE66D"/>
-  <circle cx="120" cy="260" r="12" fill="#FFE66D"/>
-  
-  <!-- Wing Patterns Right -->
   <circle cx="270" cy="150" r="15" fill="#FFE66D"/>
-  <circle cx="280" cy="260" r="12" fill="#FFE66D"/>
 </svg>
