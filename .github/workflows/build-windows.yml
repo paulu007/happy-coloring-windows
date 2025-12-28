@@ -1,4 +1,4 @@
-name: Build Windows Only
+name: Build Windows App
 
 on:
   push:
@@ -12,13 +12,16 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
+    name: Build Windows
     runs-on: windows-latest
     
     steps:
+      # 1. Checkout code
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -26,6 +29,7 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # 3. Configure Flutter for Windows ONLY
       - name: Configure Flutter
         run: |
           flutter config --enable-windows-desktop
@@ -35,22 +39,29 @@ jobs:
           flutter config --no-enable-linux-desktop
           flutter config --no-enable-macos-desktop
 
-      - name: Doctor
+      # 4. Show Flutter info
+      - name: Flutter Doctor
         run: flutter doctor -v
 
+      # 5. Clean
       - name: Clean
         run: flutter clean
 
+      # 6. Get dependencies
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build
+      # 7. Build Windows
+      - name: Build Windows Release
         run: flutter build windows --release
 
-      - name: Archive
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath HappyColor-Windows.zip
+      # 8. Create ZIP
+      - name: Create ZIP Archive
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath HappyColor-Windows.zip
         shell: powershell
 
+      # 9. Upload artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -58,10 +69,13 @@ jobs:
           path: HappyColor-Windows.zip
           retention-days: 30
 
-      - name: Release
+      # 10. Create release (only for tags)
+      - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: HappyColor-Windows.zip
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
