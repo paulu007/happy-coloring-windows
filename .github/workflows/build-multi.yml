@@ -1,0 +1,126 @@
+name: Build Release (Windows/macOS/Linux)
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: macos
+            runner: macos-latest
+          - os: windows
+            runner: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Flutter desktop
+        run: |
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            flutter config --enable-linux-desktop
+          elif [ "${{ matrix.os }}" = "macos" ]; then
+            flutter config --enable-macos-desktop
+          fi
+        shell: bash
+
+      - name: Flutter Doctor
+        run: flutter doctor -v
+
+      - name: Clean
+        run: flutter clean
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build
+        run: |
+          set -e
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            flutter build linux --release
+          elif [ "${{ matrix.os }}" = "macos" ]; then
+            flutter build macos --release
+          else
+            flutter build windows --release
+          fi
+        shell: bash
+
+      - name: Package Linux (deb + rpm)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ruby-dev build-essential rpm
+          gem install --no-document fpm
+
+          # Flutter linux bundle
+          BUNDLE_DIR=build/linux/x64/release/bundle
+          mkdir -p out
+          # Create a deb
+          fpm -s dir -t deb -n happy-coloring -v ${GITHUB_REF_NAME:-"0.0.0"} -C $BUNDLE_DIR . --description "Happy Coloring" --license "MIT" --url "https://github.com/${GITHUB_REPOSITORY}"
+          # Create an rpm
+          fpm -s dir -t rpm -n happy-coloring -v ${GITHUB_REF_NAME:-"0.0.0"} -C $BUNDLE_DIR . --description "Happy Coloring" --license "MIT" --url "https://github.com/${GITHUB_REPOSITORY}"
+
+          ls -la
+        shell: bash
+
+      - name: Package macOS (dmg)
+        if: matrix.os == 'macos'
+        run: |
+          set -e
+          APP_DIR=build/macos/Build/Products/Release
+          APP_NAME=$(ls $APP_DIR | grep -E "\.app$" | head -n1)
+          if [ -z "$APP_NAME" ]; then
+            echo "No .app found in $APP_DIR"
+            exit 1
+          fi
+          DMG_NAME=HappyColor-macOS.dmg
+          hdiutil create -volname "HappyColor" -srcfolder "$APP_DIR/$APP_NAME" -ov -format UDZO "$DMG_NAME"
+          ls -la "$DMG_NAME"
+        shell: bash
+
+      - name: Package Windows (.exe SFX)
+        if: matrix.os == 'windows'
+        run: |
+          powershell -Command "Set-StrictMode -Version Latest"
+          powershell -Command "$bundle = 'build\\windows\\x64\\runner\\Release'; if (-Not (Test-Path $bundle)) { Write-Error 'Bundle not found'; exit 1 }"
+          # Create archive with 7z and wrap as self-extracting EXE
+          powershell -Command "& 'C:\\Program Files\\7-Zip\\7z.exe' a -r HappyColor-Windows.7z build\\windows\\x64\\runner\\Release\\*"
+          powershell -Command "& 'C:\\Program Files\\7-Zip\\7z.exe' a -sfx HappyColor-Windows.exe HappyColor-Windows.7z"
+          dir
+        shell: powershell
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HappyColor-${{ matrix.os }}
+          path: |
+            ${{ matrix.os == 'linux' && 'happy-coloring_*.deb, happy-coloring-*.rpm' || (matrix.os == 'macos' && 'HappyColor-macOS.dmg') || (matrix.os == 'windows' && 'HappyColor-Windows.exe, HappyColor-Windows.7z') }}
+          retention-days: 30
+
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ matrix.os == 'linux' && 'happy-coloring_*.deb, happy-coloring-*.rpm' || (matrix.os == 'macos' && 'HappyColor-macOS.dmg') || (matrix.os == 'windows' && 'HappyColor-Windows.exe') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

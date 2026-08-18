@@ -315,6 +315,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return Colors.blue;
       case ImageCategory.food:
         return Colors.red;
+      case ImageCategory.custom:
+        return Colors.indigo;
     }
   }
 

@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/constants.dart';
+import '../models/color_region.dart';
 import '../providers/coloring_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/coloring_canvas.dart';
@@ -25,6 +30,16 @@ class _ColoringScreenState extends State<ColoringScreen>
   late AnimationController _completionController;
   late Animation<double> _completionAnimation;
 
+  // Momentarily revealed region number (tap with wrong color or long-press).
+  int? _revealedRegionId;
+  Timer? _revealTimer;
+
+  // Force-show numbers overlay (useful when recording or exporting an image)
+  bool _forceShowNumbers = false;
+
+  // Key used to capture the canvas image for export
+  final GlobalKey _canvasKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +60,7 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   @override
   void dispose() {
+    _revealTimer?.cancel();
     _coloringProvider.dispose();
     _completionController.dispose();
     super.dispose();
@@ -77,6 +93,23 @@ class _ColoringScreenState extends State<ColoringScreen>
     return AppBar(
       title: Text(provider.currentImage?.name ?? 'Loading...'),
       actions: [
+        // Toggle numbers overlay for recording/export (forced)
+        IconButton(
+          icon: Icon(
+            _forceShowNumbers ? Icons.visibility : Icons.visibility_off,
+          ),
+          onPressed: () => setState(() => _forceShowNumbers = !_forceShowNumbers),
+          tooltip: _forceShowNumbers ? 'Hide Numbers (forced)' : 'Show Numbers (forced)',
+        ),
+
+        // Export canvas (PNG) - captures current view. If forced numbers are on
+        // they'll appear in the exported image.
+        IconButton(
+          icon: const Icon(Icons.download),
+          onPressed: _exportCanvasWithNumbers,
+          tooltip: 'Export PNG',
+        ),
+
         // Hint button
         IconButton(
           icon: Icon(
@@ -194,20 +227,19 @@ class _ColoringScreenState extends State<ColoringScreen>
             provider.updateOffset(offset);
           },
           child: Center(
-            child: ColoringCanvas(
-              regions: provider.regions,
-              selectedColor: provider.selectedColor,
-              showNumbers: settings.showNumbers,
-              highlightSelected: settings.highlightRegions,
-              hintMode: provider.hintMode,
-              onTap: (point) {
-                final filled = provider.fillRegionAtPoint(point);
-                if (filled) {
-                  _onRegionFilled();
-                } else {
-                  _onWrongColor();
-                }
-              },
+            child: RepaintBoundary(
+              key: _canvasKey,
+              child: ColoringCanvas(
+                regions: provider.regions,
+                selectedColor: provider.selectedColor,
+                showNumbers: settings.showNumbers || _forceShowNumbers,
+                highlightSelected: settings.highlightRegions,
+                hintMode: provider.hintMode,
+                revealedRegionId: _revealedRegionId,
+                revision: provider.revision,
+                onTap: (point) => _onCanvasTap(point, provider),
+                onLongPress: (point) => _onCanvasLongPress(point, provider),
+              ),
             ),
           ),
         ),
@@ -401,11 +433,104 @@ class _ColoringScreenState extends State<ColoringScreen>
     }
   }
 
+  /// Tap on the canvas. When the selected color matches, the region is
+  /// filled. Otherwise the app detects the hidden number of the tapped
+  /// region, reveals it briefly and selects that color, so the next tap
+  /// colors it.
+  void _onCanvasTap(Offset point, ColoringProvider provider) {
+    final settings = context.read<SettingsProvider>();
+
+    final filled = provider.fillRegionAtPoint(point);
+    if (filled) {
+      _clearReveal();
+      _onRegionFilled();
+      return;
+    }
+
+    final region = provider.regionAt(point);
+    if (region != null) {
+      _revealRegion(region);
+      provider.selectColorByNumber(region.colorNumber);
+
+      // If user enabled auto-fill-on-detect, try to fill immediately.
+      if (settings.autoFillOnDetect) {
+        final filledAfterSelect = provider.fillRegionAtPoint(point);
+        if (filledAfterSelect) {
+          _clearReveal();
+          _onRegionFilled();
+        }
+      }
+    } else {
+      _onWrongColor();
+    }
+  }
+
+  /// Long-press reveals the hidden number without changing the selection.
+  void _onCanvasLongPress(Offset point, ColoringProvider provider) {
+    final region = provider.regionAt(point);
+    if (region != null) {
+      _revealRegion(region);
+    }
+  }
+
+  void _revealRegion(ColorRegion region) {
+    _revealTimer?.cancel();
+    setState(() => _revealedRegionId = region.id);
+    _revealTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) {
+        setState(() => _revealedRegionId = null);
+      }
+    });
+  }
+
+  /// Export the canvas as PNG. If numbers are being forced visible they will
+  /// be included. Writes a PNG to a temporary file and shows a snackbar with
+  /// the path.
+  Future<void> _exportCanvasWithNumbers() async {
+    try {
+      // Ensure a frame with forced numbers is painted
+      setState(() {});
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final boundary = _canvasKey.currentContext?.findRenderObject() as ui.RenderRepaintBoundary?;
+      if (boundary == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to capture canvas')),
+        );
+        return;
+      }
+
+      final image = await boundary.toImage(pixelRatio: ui.window.devicePixelRatio);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('Failed to encode image');
+
+      final bytes = byteData.buffer.asUint8List();
+      final tmpDir = Directory.systemTemp.createTempSync('happycolor_export_');
+      final out = File('${tmpDir.path}/HappyColor-export.png');
+      await out.writeAsBytes(bytes);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exported PNG: ${out.path}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
+  void _clearReveal() {
+    _revealTimer?.cancel();
+    if (_revealedRegionId != null) {
+      setState(() => _revealedRegionId = null);
+    }
+  }
+
   void _onWrongColor() {
     // Show feedback for wrong color
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Wrong color! Select the correct color.'),
+        content: const Text('Tap an uncolored region to fill it'),
         duration: const Duration(seconds: 1),
         behavior: SnackBarBehavior.floating,
         backgroundColor: Colors.orange,

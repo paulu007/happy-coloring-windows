@@ -8,6 +8,7 @@ class SettingsProvider extends ChangeNotifier {
   static const String _autoSaveKey = 'auto_save';
   static const String _showNumbersKey = 'show_numbers';
   static const String _highlightKey = 'highlight_regions';
+  static const String _autoFillDetectKey = 'auto_fill_detect';
 
   late SharedPreferences _prefs;
 
@@ -16,8 +17,13 @@ class SettingsProvider extends ChangeNotifier {
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
   bool _autoSave = true;
-  bool _showNumbers = true;
+  // Numbers are hidden by default for a clean canvas. The number is still
+  // tracked internally per region and revealed on tap/long-press.
+  bool _showNumbers = false;
   bool _highlightRegions = true;
+  // When true, tapping an unfilled region will auto-select its number **and**
+  // immediately fill it (useful for quick painting and recorder demos).
+  bool _autoFillOnDetect = false;
 
   // Getters
   ThemeMode get themeMode => _themeMode;
@@ -26,6 +32,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get autoSave => _autoSave;
   bool get showNumbers => _showNumbers;
   bool get highlightRegions => _highlightRegions;
+  bool get autoFillOnDetect => _autoFillOnDetect;
 
   /// Initialize settings from storage
   Future<void> initialize() async {
@@ -35,8 +42,9 @@ class SettingsProvider extends ChangeNotifier {
     _soundEnabled = _prefs.getBool(_soundKey) ?? true;
     _vibrationEnabled = _prefs.getBool(_vibrationKey) ?? true;
     _autoSave = _prefs.getBool(_autoSaveKey) ?? true;
-    _showNumbers = _prefs.getBool(_showNumbersKey) ?? true;
+    _showNumbers = _prefs.getBool(_showNumbersKey) ?? false;
     _highlightRegions = _prefs.getBool(_highlightKey) ?? true;
+    _autoFillOnDetect = _prefs.getBool(_autoFillDetectKey) ?? false;
     
     notifyListeners();
   }
@@ -83,14 +91,22 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Toggle auto-fill-on-detect
+  Future<void> toggleAutoFillOnDetect() async {
+    _autoFillOnDetect = !_autoFillOnDetect;
+    await _prefs.setBool(_autoFillDetectKey, _autoFillOnDetect);
+    notifyListeners();
+  }
+
   /// Reset all settings to defaults
   Future<void> resetToDefaults() async {
     _themeMode = ThemeMode.system;
     _soundEnabled = true;
     _vibrationEnabled = true;
     _autoSave = true;
-    _showNumbers = true;
+    _showNumbers = false;
     _highlightRegions = true;
+    _autoFillOnDetect = false;
 
     await _prefs.clear();
     notifyListeners();

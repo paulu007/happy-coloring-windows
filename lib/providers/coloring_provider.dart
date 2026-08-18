@@ -33,6 +33,11 @@ class ColoringProvider extends ChangeNotifier {
   // Hint mode
   bool _hintMode = false;
 
+  // Bumped on every mutation that changes what the canvas should draw.
+  // The canvas compares this instead of the regions list, because regions
+  // are mutated in place (list identity never changes).
+  int _revision = 0;
+
   // Getters
   ColoringState get state => _state;
   ColoringImage? get currentImage => _currentImage;
@@ -43,6 +48,7 @@ class ColoringProvider extends ChangeNotifier {
   bool get hintMode => _hintMode;
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  int get revision => _revision;
 
   double get progress => _currentImage?.progress ?? 0;
   bool get isCompleted => _currentImage?.isCompleted ?? false;
@@ -67,7 +73,8 @@ class ColoringProvider extends ChangeNotifier {
       _offset = Offset.zero;
       _undoStack.clear();
       _redoStack.clear();
-      
+      _revision++;
+
       _state = ColoringState.loaded;
     } catch (e) {
       _state = ColoringState.error;
@@ -112,7 +119,8 @@ class ColoringProvider extends ChangeNotifier {
           // Add to undo stack
           _undoStack.add(region.id);
           _redoStack.clear();
-          
+          _revision++;
+
           // Check if completed
           _checkCompletion();
           
@@ -149,6 +157,7 @@ class ColoringProvider extends ChangeNotifier {
         .length;
 
     _redoStack.clear();
+    _revision++;
     _checkCompletion();
     _saveProgress();
     notifyListeners();
@@ -160,16 +169,17 @@ class ColoringProvider extends ChangeNotifier {
 
     final regionId = _undoStack.removeLast();
     final region = _currentImage!.regions.firstWhere((r) => r.id == regionId);
-    
+
     region.isFilled = false;
-    
+
     // Update palette
     final paletteColor = palette.firstWhere((p) => p.number == region.colorNumber);
     paletteColor.filledRegions--;
-    
+
     _redoStack.add(regionId);
     _currentImage!.isCompleted = false;
-    
+    _revision++;
+
     _saveProgress();
     notifyListeners();
   }
@@ -188,10 +198,25 @@ class ColoringProvider extends ChangeNotifier {
     paletteColor.filledRegions++;
     
     _undoStack.add(regionId);
-    
+    _revision++;
+
     _checkCompletion();
     _saveProgress();
     notifyListeners();
+  }
+
+  /// Find the topmost unfilled region containing [point], without filling it.
+  /// Returns null when the point is not over an unfilled region.
+  ColorRegion? regionAt(Offset point) {
+    if (_currentImage == null) return null;
+
+    for (int i = _currentImage!.regions.length - 1; i >= 0; i--) {
+      final region = _currentImage!.regions[i];
+      if (!region.isFilled && region.containsPoint(point)) {
+        return region;
+      }
+    }
+    return null;
   }
 
   /// Toggle hint mode

@@ -27,7 +27,9 @@ class SettingsScreen extends StatelessWidget {
               _buildSectionHeader('Coloring'),
               _buildSwitchTile(
                 title: 'Show Numbers',
-                subtitle: 'Display numbers on unfilled regions',
+                subtitle:
+                    'Display numbers on regions. When off, tap a region to '
+                    'reveal its number',
                 value: settings.showNumbers,
                 onChanged: (_) => settings.toggleShowNumbers(),
               ),
@@ -36,6 +38,13 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: 'Highlight regions matching selected color',
                 value: settings.highlightRegions,
                 onChanged: (_) => settings.toggleHighlightRegions(),
+              ),
+              _buildSwitchTile(
+                title: 'Auto-Fill on Detect',
+                subtitle:
+                    'When enabled, tapping an uncolored region will auto-select its number and fill it immediately (useful for quick painting/recording).',
+                value: settings.autoFillOnDetect,
+                onChanged: (_) => settings.toggleAutoFillOnDetect(),
               ),
               _buildSwitchTile(
                 title: 'Auto-Save',

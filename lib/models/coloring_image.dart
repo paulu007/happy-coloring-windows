@@ -9,6 +9,7 @@ enum ImageCategory {
   fantasy,
   places,
   food,
+  custom,
 }
 
 extension ImageCategoryExtension on ImageCategory {
@@ -43,6 +44,8 @@ extension ImageCategoryExtension on ImageCategory {
         return '🏰';
       case ImageCategory.food:
         return '🍕';
+      case ImageCategory.custom:
+        return '🎨';
     }
   }
 }
