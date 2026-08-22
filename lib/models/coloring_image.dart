@@ -27,6 +27,8 @@ extension ImageCategoryExtension on ImageCategory {
         return 'Places';
       case ImageCategory.food:
         return 'Food';
+      case ImageCategory.custom:
+        return 'Custom';
     }
   }
 

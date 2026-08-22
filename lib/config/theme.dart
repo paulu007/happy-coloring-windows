@@ -60,7 +60,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 1.5,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(

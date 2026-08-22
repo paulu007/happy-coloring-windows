@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/constants.dart';
@@ -550,7 +551,7 @@ class _ColoringScreenState extends State<ColoringScreen> {
       await Future.delayed(const Duration(milliseconds: 50));
 
       final boundary =
-          _canvasKey.currentContext?.findRenderObject() as ui.RenderRepaintBoundary?;
+          _canvasKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to capture canvas')),
@@ -559,7 +560,7 @@ class _ColoringScreenState extends State<ColoringScreen> {
       }
 
       final image =
-          await boundary.toImage(pixelRatio: ui.window.devicePixelRatio);
+          await boundary.toImage(pixelRatio: MediaQuery.devicePixelRatioOf(context));
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw Exception('Failed to encode image');
 
