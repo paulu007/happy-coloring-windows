@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../config/constants.dart';
 import '../models/coloring_image.dart';
 import '../providers/gallery_provider.dart';
+import '../utils/import_helper.dart';
 import '../widgets/image_card.dart';
 import 'coloring_screen.dart';
 
@@ -27,6 +28,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gallery'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            tooltip: 'Import a photo to color',
+            onPressed: () => pickAndImportImage(context),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: _buildSearchBar(),
@@ -202,36 +210,44 @@ class _GalleryScreenState extends State<GalleryScreen> {
           );
         }
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.85,
-          ),
-          itemCount: gallery.images.length,
-          itemBuilder: (context, index) {
-            final image = gallery.images[index];
-            return ImageCard(
-              imageInfo: image,
-              progress: gallery.getProgress(image.id),
-              isFavorite: gallery.isFavorite(image.id),
-              onTap: () => _navigateToColoring(image.id),
-              onFavoriteToggle: () => gallery.toggleFavorite(image.id),
-            );
-          },
-        );
+        return LayoutBuilder(builder: (ctx, c) {
+          final w = c.maxWidth;
+          final cols = w >= 1100 ? 4 : w >= 700 ? 3 : 2;
+          return GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: gallery.images.length,
+            itemBuilder: (context, index) {
+              final image = gallery.images[index];
+              return ImageCard(
+                imageInfo: image,
+                progress: gallery.getProgress(image.id),
+                isFavorite: gallery.isFavorite(image.id),
+                onTap: () => _navigateToColoring(image.id),
+                onFavoriteToggle: () => gallery.toggleFavorite(image.id),
+              );
+            },
+          );
+        });
       },
     );
   }
 
-  void _navigateToColoring(String imageId) {
-    Navigator.push(
+  Future<void> _navigateToColoring(String imageId) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ColoringScreen(imageId: imageId),
       ),
     );
+    // Progress may have changed while coloring.
+    if (mounted) {
+      context.read<GalleryProvider>().refresh();
+    }
   }
 }

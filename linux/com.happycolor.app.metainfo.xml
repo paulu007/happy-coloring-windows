@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.happycolor.app</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Happy Color</name>
+  <summary>Color by number — turn any photo into a coloring page</summary>
+  <description>
+    <p>Happy Color turns any photo into a clean color-by-number template. Numbers are hidden from the canvas but detected automatically on tap, so you can record without visible numbers and still paint by region.</p>
+    <p>Features: photo import, perceptual quantization, smoothing, pan &amp; zoom, progress saving, and desktop-optimized UI.</p>
+  </description>
+  <launchable type="desktop-id">com.happycolor.app.desktop</launchable>
+  <provides>
+    <id>com.happycolor.app.desktop</id>
+  </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Happy Color — coloring canvas</caption>
+      <image>https://raw.githubusercontent.com/example/happy-coloring/main/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://github.com/</url>
+  <developer_name>Happy Color Contributors</developer_name>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">600</display_length>
+  </requires>
+</component>

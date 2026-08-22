@@ -1,99 +1,102 @@
 import 'package:flutter/material.dart';
 import 'constants.dart';
 
+/// Material 3 themes tuned for desktop (Windows, Linux, macOS).
+///
+/// No hard-coded font family is set so every platform renders with its
+/// native system font (Segoe UI on Windows, Adwaita/Inter on Linux, SF Pro
+/// on macOS) - both for a native look and to avoid font-fallback work.
 class AppTheme {
   static ThemeData get lightTheme {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.primary,
+      brightness: Brightness.light,
+    );
+    return _baseTheme(scheme.copyWith(surface: Colors.white));
+  }
+
+  static ThemeData get darkTheme {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.primary,
+      brightness: Brightness.dark,
+    );
+    return _baseTheme(scheme);
+  }
+
+  static ThemeData _baseTheme(ColorScheme scheme) {
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: AppColors.background,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.primary,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.brightness == Brightness.light
+          ? AppColors.background
+          : const Color(0xFF121228),
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.brightness == Brightness.light
+            ? AppColors.primary
+            : const Color(0xFF1A2340),
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+        scrolledUnderElevation: 2,
+        titleTextStyle: const TextStyle(
           fontSize: 20,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
+          letterSpacing: -0.2,
         ),
-      ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(fontFamily: 'Segoe UI'),
-        displayMedium: TextStyle(fontFamily: 'Segoe UI'),
-        displaySmall: TextStyle(fontFamily: 'Segoe UI'),
-        headlineLarge: TextStyle(fontFamily: 'Segoe UI'),
-        headlineMedium: TextStyle(fontFamily: 'Segoe UI'),
-        headlineSmall: TextStyle(fontFamily: 'Segoe UI'),
-        titleLarge: TextStyle(fontFamily: 'Segoe UI'),
-        titleMedium: TextStyle(fontFamily: 'Segoe UI'),
-        titleSmall: TextStyle(fontFamily: 'Segoe UI'),
-        bodyLarge: TextStyle(fontFamily: 'Segoe UI'),
-        bodyMedium: TextStyle(fontFamily: 'Segoe UI'),
-        bodySmall: TextStyle(fontFamily: 'Segoe UI'),
-        labelLarge: TextStyle(fontFamily: 'Segoe UI'),
-        labelMedium: TextStyle(fontFamily: 'Segoe UI'),
-        labelSmall: TextStyle(fontFamily: 'Segoe UI'),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
       cardTheme: CardTheme(
-        elevation: 2,
+        elevation: 1.5,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
       ),
-    );
-  }
-
-  static ThemeData get darkTheme {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        brightness: Brightness.dark,
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      scaffoldBackgroundColor: const Color(0xFF1A1A2E),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFF16213E),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        titleTextStyle: TextStyle(
-          fontFamily: 'Segoe UI',
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: AppColors.primary.withOpacity(0.22),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+              fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+            )),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: scheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: scheme.primary, width: 1.5),
         ),
       ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(fontFamily: 'Segoe UI'),
-        displayMedium: TextStyle(fontFamily: 'Segoe UI'),
-        displaySmall: TextStyle(fontFamily: 'Segoe UI'),
-        headlineLarge: TextStyle(fontFamily: 'Segoe UI'),
-        headlineMedium: TextStyle(fontFamily: 'Segoe UI'),
-        headlineSmall: TextStyle(fontFamily: 'Segoe UI'),
-        titleLarge: TextStyle(fontFamily: 'Segoe UI'),
-        titleMedium: TextStyle(fontFamily: 'Segoe UI'),
-        titleSmall: TextStyle(fontFamily: 'Segoe UI'),
-        bodyLarge: TextStyle(fontFamily: 'Segoe UI'),
-        bodyMedium: TextStyle(fontFamily: 'Segoe UI'),
-        bodySmall: TextStyle(fontFamily: 'Segoe UI'),
-        labelLarge: TextStyle(fontFamily: 'Segoe UI'),
-        labelMedium: TextStyle(fontFamily: 'Segoe UI'),
-        labelSmall: TextStyle(fontFamily: 'Segoe UI'),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
     );
   }

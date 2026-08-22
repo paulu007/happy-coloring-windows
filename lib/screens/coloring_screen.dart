@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/constants.dart';
 import '../models/color_region.dart';
@@ -24,11 +25,8 @@ class ColoringScreen extends StatefulWidget {
   State<ColoringScreen> createState() => _ColoringScreenState();
 }
 
-class _ColoringScreenState extends State<ColoringScreen>
-    with TickerProviderStateMixin {
+class _ColoringScreenState extends State<ColoringScreen> {
   late ColoringProvider _coloringProvider;
-  late AnimationController _completionController;
-  late Animation<double> _completionAnimation;
 
   // Momentarily revealed region number (tap with wrong color or long-press).
   int? _revealedRegionId;
@@ -37,32 +35,31 @@ class _ColoringScreenState extends State<ColoringScreen>
   // Force-show numbers overlay (useful when recording or exporting an image)
   bool _forceShowNumbers = false;
 
+  // Quick toggle for auto-paint (mirrors the persisted setting).
+  late bool _autoPaint;
+
   // Key used to capture the canvas image for export
   final GlobalKey _canvasKey = GlobalKey();
+
+  // Drives the InteractiveViewer so toolbar buttons and keyboard shortcuts
+  // apply the same transform as pinch-zoom.
+  final GlobalKey<ZoomContainerState> _zoomKey = GlobalKey<ZoomContainerState>();
 
   @override
   void initState() {
     super.initState();
-    
+
     _coloringProvider = ColoringProvider();
     _coloringProvider.loadImage(widget.imageId);
 
-    _completionController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    );
-
-    _completionAnimation = CurvedAnimation(
-      parent: _completionController,
-      curve: Curves.elasticOut,
-    );
+    final settings = context.read<SettingsProvider>();
+    _autoPaint = settings.autoFillOnDetect;
   }
 
   @override
   void dispose() {
     _revealTimer?.cancel();
     _coloringProvider.dispose();
-    _completionController.dispose();
     super.dispose();
   }
 
@@ -79,10 +76,34 @@ class _ColoringScreenState extends State<ColoringScreen>
             });
           }
 
-          return Scaffold(
-            appBar: _buildAppBar(provider),
-            body: _buildBody(provider),
-            bottomNavigationBar: _buildBottomBar(provider),
+          return CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+                  _coloringProvider.undo,
+              const SingleActivator(
+                LogicalKeyboardKey.keyZ,
+                control: true,
+                shift: true,
+              ): _coloringProvider.redo,
+              const SingleActivator(LogicalKeyboardKey.keyY, control: true):
+                  _coloringProvider.redo,
+              const SingleActivator(LogicalKeyboardKey.keyN):
+                  _toggleForceNumbers,
+              const SingleActivator(LogicalKeyboardKey.digit0):
+                  () => _zoomKey.currentState?.resetView(),
+              const SingleActivator(LogicalKeyboardKey.equal, control: true):
+                  () => _zoomKey.currentState?.zoomIn(),
+              const SingleActivator(LogicalKeyboardKey.minus, control: true):
+                  () => _zoomKey.currentState?.zoomOut(),
+            },
+            child: Focus(
+              autofocus: true,
+              child: Scaffold(
+                appBar: _buildAppBar(provider),
+                body: _buildBody(provider),
+                bottomNavigationBar: _buildBottomBar(provider),
+              ),
+            ),
           );
         },
       ),
@@ -93,13 +114,28 @@ class _ColoringScreenState extends State<ColoringScreen>
     return AppBar(
       title: Text(provider.currentImage?.name ?? 'Loading...'),
       actions: [
+        // Auto-paint: the app detects the (possibly hidden) number of the
+        // tapped region and paints it with the correct color automatically.
+        IconButton(
+          icon: Icon(
+            _autoPaint ? Icons.auto_fix_high : Icons.auto_fix_off,
+            color: _autoPaint ? AppColors.secondary : null,
+          ),
+          onPressed: _toggleAutoPaint,
+          tooltip: _autoPaint
+              ? 'Auto-Paint: ON (tap any region to paint it)'
+              : 'Auto-Paint: OFF (tap reveals the number)',
+        ),
+
         // Toggle numbers overlay for recording/export (forced)
         IconButton(
           icon: Icon(
             _forceShowNumbers ? Icons.visibility : Icons.visibility_off,
           ),
-          onPressed: () => setState(() => _forceShowNumbers = !_forceShowNumbers),
-          tooltip: _forceShowNumbers ? 'Hide Numbers (forced)' : 'Show Numbers (forced)',
+          onPressed: _toggleForceNumbers,
+          tooltip: _forceShowNumbers
+              ? 'Hide Numbers (forced)'
+              : 'Show Numbers (forced)',
         ),
 
         // Export canvas (PNG) - captures current view. If forced numbers are on
@@ -119,21 +155,21 @@ class _ColoringScreenState extends State<ColoringScreen>
           onPressed: provider.toggleHintMode,
           tooltip: 'Hint Mode',
         ),
-        
+
         // Undo button
         IconButton(
           icon: const Icon(Icons.undo),
           onPressed: provider.canUndo ? provider.undo : null,
-          tooltip: 'Undo',
+          tooltip: 'Undo (Ctrl+Z)',
         ),
-        
+
         // Redo button
         IconButton(
           icon: const Icon(Icons.redo),
           onPressed: provider.canRedo ? provider.redo : null,
-          tooltip: 'Redo',
+          tooltip: 'Redo (Ctrl+Y)',
         ),
-        
+
         // More options
         PopupMenuButton<String>(
           onSelected: (value) => _handleMenuAction(value, provider),
@@ -217,28 +253,42 @@ class _ColoringScreenState extends State<ColoringScreen>
 
   Widget _buildCanvas(ColoringProvider provider) {
     final settings = context.watch<SettingsProvider>();
+    final imageSize = provider.currentImage?.originalSize ?? Size.zero;
 
     return Stack(
       children: [
-        // Main canvas with zoom
+        // Main canvas with zoom. The picture is laid out 1:1 in image
+        // coordinates inside a SizedBox, then fitted to the window with
+        // FittedBox - so it is always centered, fully visible, and taps map
+        // directly to image coordinates at any window size.
         ZoomContainer(
+          key: _zoomKey,
           onTransformChanged: (scale, offset) {
-            provider.updateScale(scale);
-            provider.updateOffset(offset);
+            provider.updateViewSilently(scale, offset);
           },
           child: Center(
-            child: RepaintBoundary(
-              key: _canvasKey,
-              child: ColoringCanvas(
-                regions: provider.regions,
-                selectedColor: provider.selectedColor,
-                showNumbers: settings.showNumbers || _forceShowNumbers,
-                highlightSelected: settings.highlightRegions,
-                hintMode: provider.hintMode,
-                revealedRegionId: _revealedRegionId,
-                revision: provider.revision,
-                onTap: (point) => _onCanvasTap(point, provider),
-                onLongPress: (point) => _onCanvasLongPress(point, provider),
+            child: ClipRect(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: imageSize.width,
+                  height: imageSize.height,
+                  child: RepaintBoundary(
+                    key: _canvasKey,
+                    child: ColoringCanvas(
+                      regions: provider.regions,
+                      selectedColor: provider.selectedColor,
+                      showNumbers: settings.showNumbers || _forceShowNumbers,
+                      highlightSelected: settings.highlightRegions,
+                      hintMode: provider.hintMode,
+                      revealedRegionId: _revealedRegionId,
+                      revision: provider.revision,
+                      onTap: (point) => _onCanvasTap(point, provider),
+                      onLongPress: (point) =>
+                          _onCanvasLongPress(point, provider),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -255,7 +305,7 @@ class _ColoringScreenState extends State<ColoringScreen>
         Positioned(
           right: 16,
           bottom: 100,
-          child: _buildZoomControls(provider),
+          child: _buildZoomControls(),
         ),
       ],
     );
@@ -268,7 +318,7 @@ class _ColoringScreenState extends State<ColoringScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -304,10 +354,10 @@ class _ColoringScreenState extends State<ColoringScreen>
     );
   }
 
-  Widget _buildZoomControls(ColoringProvider provider) {
+  Widget _buildZoomControls() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -321,10 +371,8 @@ class _ColoringScreenState extends State<ColoringScreen>
         children: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              final newScale = (provider.scale * 1.2).clamp(0.5, 5.0);
-              provider.updateScale(newScale);
-            },
+            onPressed: () => _zoomKey.currentState?.zoomIn(),
+            tooltip: 'Zoom in',
           ),
           Container(
             height: 1,
@@ -333,10 +381,8 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
           IconButton(
             icon: const Icon(Icons.remove),
-            onPressed: () {
-              final newScale = (provider.scale / 1.2).clamp(0.5, 5.0);
-              provider.updateScale(newScale);
-            },
+            onPressed: () => _zoomKey.currentState?.zoomOut(),
+            tooltip: 'Zoom out',
           ),
           Container(
             height: 1,
@@ -345,7 +391,8 @@ class _ColoringScreenState extends State<ColoringScreen>
           ),
           IconButton(
             icon: const Icon(Icons.center_focus_strong),
-            onPressed: provider.resetView,
+            onPressed: () => _zoomKey.currentState?.resetView(),
+            tooltip: 'Fit to window (0)',
           ),
         ],
       ),
@@ -365,7 +412,7 @@ class _ColoringScreenState extends State<ColoringScreen>
         if (provider.selectedColor != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             child: Row(
               children: [
                 Container(
@@ -404,10 +451,19 @@ class _ColoringScreenState extends State<ColoringScreen>
     );
   }
 
+  void _toggleForceNumbers() {
+    setState(() => _forceShowNumbers = !_forceShowNumbers);
+  }
+
+  void _toggleAutoPaint() {
+    setState(() => _autoPaint = !_autoPaint);
+    context.read<SettingsProvider>().setAutoFillOnDetect(_autoPaint);
+  }
+
   void _handleMenuAction(String action, ColoringProvider provider) {
     switch (action) {
       case 'reset_view':
-        provider.resetView();
+        _zoomKey.currentState?.resetView();
         break;
       case 'fill_color':
         provider.fillAllWithSelectedColor();
@@ -433,12 +489,13 @@ class _ColoringScreenState extends State<ColoringScreen>
     }
   }
 
-  /// Tap on the canvas. When the selected color matches, the region is
-  /// filled. Otherwise the app detects the hidden number of the tapped
-  /// region, reveals it briefly and selects that color, so the next tap
-  /// colors it.
+  /// Tap on the canvas. When auto-paint is on (default) the app detects the
+  /// hidden number of the tapped region and paints it with the correct color
+  /// right away. Otherwise the number is revealed briefly and that color is
+  /// selected, so the next tap colors it.
   void _onCanvasTap(Offset point, ColoringProvider provider) {
     final settings = context.read<SettingsProvider>();
+    final autoPaint = _autoPaint || settings.autoFillOnDetect;
 
     final filled = provider.fillRegionAtPoint(point);
     if (filled) {
@@ -453,7 +510,7 @@ class _ColoringScreenState extends State<ColoringScreen>
       provider.selectColorByNumber(region.colorNumber);
 
       // If user enabled auto-fill-on-detect, try to fill immediately.
-      if (settings.autoFillOnDetect) {
+      if (autoPaint) {
         final filledAfterSelect = provider.fillRegionAtPoint(point);
         if (filledAfterSelect) {
           _clearReveal();
@@ -492,7 +549,8 @@ class _ColoringScreenState extends State<ColoringScreen>
       setState(() {});
       await Future.delayed(const Duration(milliseconds: 50));
 
-      final boundary = _canvasKey.currentContext?.findRenderObject() as ui.RenderRepaintBoundary?;
+      final boundary =
+          _canvasKey.currentContext?.findRenderObject() as ui.RenderRepaintBoundary?;
       if (boundary == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to capture canvas')),
@@ -500,7 +558,8 @@ class _ColoringScreenState extends State<ColoringScreen>
         return;
       }
 
-      final image = await boundary.toImage(pixelRatio: ui.window.devicePixelRatio);
+      final image =
+          await boundary.toImage(pixelRatio: ui.window.devicePixelRatio);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw Exception('Failed to encode image');
 

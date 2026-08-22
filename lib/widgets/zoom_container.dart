@@ -17,14 +17,16 @@ class ZoomContainer extends StatefulWidget {
   });
 
   @override
-  State<ZoomContainer> createState() => _ZoomContainerState();
+  State<ZoomContainer> createState() => ZoomContainerState();
 }
 
-class _ZoomContainerState extends State<ZoomContainer> {
+class ZoomContainerState extends State<ZoomContainer> {
   final TransformationController _controller = TransformationController();
-  
+
   double _currentScale = 1.0;
   Offset _currentOffset = Offset.zero;
+
+  double get scale => _currentScale;
 
   @override
   void dispose() {
@@ -36,11 +38,41 @@ class _ZoomContainerState extends State<ZoomContainer> {
     final matrix = _controller.value;
     _currentScale = matrix.getMaxScaleOnAxis();
     _currentOffset = Offset(matrix.getTranslation().x, matrix.getTranslation().y);
-    
+
     widget.onTransformChanged?.call(_currentScale, _currentOffset);
   }
 
-  void resetZoom() {
+  /// Multiply the current zoom by [factor], keeping the viewport center
+  /// anchored. Exposed so toolbar buttons and keyboard shortcuts can drive
+  /// the same transform the gestures use.
+  void zoomBy(double factor) {
+    final size = context.size;
+    if (size == null) return;
+
+    final old = _controller.value;
+    final oldScale = old.getMaxScaleOnAxis();
+    final target =
+        (oldScale * factor).clamp(widget.minScale, widget.maxScale);
+    final actual = target / oldScale;
+    if ((actual - 1.0).abs() < 0.0001) return;
+
+    final center = size.center(Offset.zero);
+    final updated = Matrix4.identity()
+      ..translate(center.dx, center.dy)
+      ..scale(actual, actual, 1.0)
+      ..translate(-center.dx, -center.dy)
+      ..multiply(old);
+
+    _controller.value = updated;
+    _currentScale = target;
+    widget.onTransformChanged?.call(_currentScale, _currentOffset);
+  }
+
+  void zoomIn() => zoomBy(1.2);
+
+  void zoomOut() => zoomBy(1 / 1.2);
+
+  void resetView() {
     _controller.value = Matrix4.identity();
     _currentScale = 1.0;
     _currentOffset = Offset.zero;

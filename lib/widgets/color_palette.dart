@@ -20,35 +20,35 @@ class ColorPalette extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 80,
+      height: 84,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.5))),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 10,
             offset: const Offset(0, -2),
           ),
         ],
       ),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        itemCount: colors.length,
-        itemBuilder: (context, index) {
-          final color = colors[index];
-          final isSelected = selectedColor?.number == color.number;
-          
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: ColorPaletteItem(
+      child: Scrollbar(
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          itemCount: colors.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final color = colors[index];
+            final isSelected = selectedColor?.number == color.number;
+            return ColorPaletteItem(
               paletteColor: color,
               isSelected: isSelected,
               showProgress: showProgress,
               onTap: () => onColorSelected(color),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -74,27 +74,29 @@ class ColorPaletteItem extends StatelessWidget {
     
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: AppConstants.paletteItemSize,
-        height: AppConstants.paletteItemSize,
-        decoration: BoxDecoration(
-          color: paletteColor.color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isSelected ? Colors.black : Colors.grey.shade300,
-            width: isSelected ? 3 : 1,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: AppConstants.paletteItemSize,
+          height: AppConstants.paletteItemSize,
+          decoration: BoxDecoration(
+            color: paletteColor.color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected ? Colors.black : Colors.grey.shade300,
+              width: isSelected ? 3 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: paletteColor.color.withOpacity(0.5),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : null,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: paletteColor.color.withOpacity(0.5),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
-        ),
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -151,7 +153,8 @@ class ColorPaletteItem extends StatelessWidget {
                   ),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

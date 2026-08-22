@@ -28,8 +28,8 @@ class SettingsScreen extends StatelessWidget {
               _buildSwitchTile(
                 title: 'Show Numbers',
                 subtitle:
-                    'Display numbers on regions. When off, tap a region to '
-                    'reveal its number',
+                    'Display numbers on regions. When off, the app still '
+                    'knows every number - tap a region to reveal it',
                 value: settings.showNumbers,
                 onChanged: (_) => settings.toggleShowNumbers(),
               ),
@@ -40,9 +40,11 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (_) => settings.toggleHighlightRegions(),
               ),
               _buildSwitchTile(
-                title: 'Auto-Fill on Detect',
+                title: 'Auto-Paint on Tap',
                 subtitle:
-                    'When enabled, tapping an uncolored region will auto-select its number and fill it immediately (useful for quick painting/recording).',
+                    'Tap any region and the app detects its number and '
+                    'paints it with the correct color automatically - even '
+                    'when numbers are hidden (great for recordings)',
                 value: settings.autoFillOnDetect,
                 onChanged: (_) => settings.toggleAutoFillOnDetect(),
               ),

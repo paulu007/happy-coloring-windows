@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Happy Color
+Comment=Color by number — turn any photo into a coloring page
+GenericName=Coloring App
+Exec=happy_color_app
+Icon=com.happycolor.app
+Terminal=false
+Type=Application
+Categories=Graphics;2DGraphics;Education;Game;
+Keywords=coloring;paint;art;photo;
+StartupWMClass=happy_color_app
+X-GNOME-UsesNotifications=true

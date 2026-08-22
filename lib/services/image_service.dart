@@ -114,6 +114,7 @@ class ImageService {
   Future<ColoringImage> importImage({
     required Uint8List bytes,
     required String fileName,
+    ConverterOptions options = const ConverterOptions(),
   }) async {
     final id = '$_importPrefix${_fnv1aHash(bytes)}';
     await ensureImportsLoaded();
@@ -132,7 +133,7 @@ class ImageService {
     await File(sourcePath).writeAsBytes(bytes);
 
     final name = _displayName(fileName);
-    final result = await ImageConverterService.convert(bytes: bytes);
+    final result = await ImageConverterService.convert(bytes: bytes, options: options);
     final image = ImageConverterService.toColoringImage(
       result,
       id: id,

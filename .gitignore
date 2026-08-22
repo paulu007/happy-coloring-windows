@@ -114,10 +114,9 @@ lib/generated_plugin_registrant.dart
 
 # End of https://www.toptal.com/developers/gitignore/api/flutter
 
-# Platforms not needed
+# Platforms not needed — keep linux & windows for desktop builds
 android/
 ios/
-linux/
 macos/
 web/
 

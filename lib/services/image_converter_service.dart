@@ -9,6 +9,9 @@ import '../models/coloring_image.dart';
 import '../models/color_region.dart';
 import '../models/palette_color.dart';
 
+/// Difficulty / quality presets for the converter.
+enum ConverterPreset { simple, balanced, detailed }
+
 /// Options for converting a raster image into a color-by-number template.
 class ConverterOptions {
   /// Maximum number of distinct colors in the generated palette.
@@ -27,12 +30,74 @@ class ConverterOptions {
   /// remove pixel noise.
   final int smoothingPasses;
 
+  /// Lloyd (k-means) iterations used to refine the median-cut palette so the
+  /// generated colors match the source image more closely.
+  final int refineIterations;
+
+  /// Use perceptual CIELAB (Delta E) distance for quantization/mapping instead
+  /// of weighted RGB. Better matches human perception; slightly more CPU.
+  final bool useLabDistance;
+
+  /// Preserve edges during smoothing — border pixels keep their original
+  /// palette index, so smoothing cannot bleed across region boundaries.
+  final bool edgeAwareSmoothing;
+
+  /// Slight contrast boost applied before quantization (0.0 = off, ~0.08
+  /// recommended). Makes dull photos separate into more distinct regions.
+  final double contrastBoost;
+
   const ConverterOptions({
     this.maxColors = 16,
-    this.maxDimension = 360,
+    this.maxDimension = 480,
     this.minRegionArea = 16,
     this.smoothingPasses = 2,
+    this.refineIterations = 4,
+    this.useLabDistance = true,
+    this.edgeAwareSmoothing = true,
+    this.contrastBoost = 0.06,
   });
+
+  factory ConverterOptions.preset(ConverterPreset preset) {
+    switch (preset) {
+      case ConverterPreset.simple:
+        return const ConverterOptions(
+            maxColors: 10,
+            maxDimension: 400,
+            minRegionArea: 28,
+            smoothingPasses: 3,
+            refineIterations: 2);
+      case ConverterPreset.detailed:
+        return const ConverterOptions(
+            maxColors: 24,
+            maxDimension: 640,
+            minRegionArea: 10,
+            smoothingPasses: 1,
+            refineIterations: 6);
+      case ConverterPreset.balanced:
+        return const ConverterOptions();
+    }
+  }
+
+  ConverterOptions copyWith({
+    int? maxColors,
+    int? maxDimension,
+    int? minRegionArea,
+    int? smoothingPasses,
+    int? refineIterations,
+    bool? useLabDistance,
+    bool? edgeAwareSmoothing,
+    double? contrastBoost,
+  }) =>
+      ConverterOptions(
+        maxColors: maxColors ?? this.maxColors,
+        maxDimension: maxDimension ?? this.maxDimension,
+        minRegionArea: minRegionArea ?? this.minRegionArea,
+        smoothingPasses: smoothingPasses ?? this.smoothingPasses,
+        refineIterations: refineIterations ?? this.refineIterations,
+        useLabDistance: useLabDistance ?? this.useLabDistance,
+        edgeAwareSmoothing: edgeAwareSmoothing ?? this.edgeAwareSmoothing,
+        contrastBoost: contrastBoost ?? this.contrastBoost,
+      );
 }
 
 /// Result of the pure (isolate-safe) conversion pipeline. Contains only
@@ -95,12 +160,35 @@ class ImageConverterService {
     for (var i = 0; i < result.regions.length; i++) {
       final r = result.regions[i];
       final path = Path();
+
+      // Merge vertically contiguous runs with identical x-extent into a
+      // single rect. Runs arrive in scan order, so stacked runs are adjacent
+      // in the list. This typically cuts the rect count (and therefore both
+      // painting and hit-testing cost) by 3-5x.
+      var started = false;
+      var runY0 = 0.0, runY1 = 0.0, runX0 = 0.0, runX1 = 0.0;
       for (var j = 0; j < r.runs.length; j += 3) {
         final y = r.runs[j].toDouble();
         final x0 = r.runs[j + 1].toDouble();
         final x1 = r.runs[j + 2] + 1.0;
-        path.addRect(Rect.fromLTRB(x0, y, x1, y + 1.0));
+
+        if (started && x0 == runX0 && x1 == runX1 && y == runY1 + 1.0) {
+          runY1 = y; // extend current rect downwards
+          continue;
+        }
+        if (started) {
+          path.addRect(Rect.fromLTRB(runX0, runY0, runX1, runY1 + 1.0));
+        }
+        started = true;
+        runY0 = y;
+        runY1 = y;
+        runX0 = x0;
+        runX1 = x1;
       }
+      if (started) {
+        path.addRect(Rect.fromLTRB(runX0, runY0, runX1, runY1 + 1.0));
+      }
+
       regions.add(ColorRegion(
         id: i,
         path: path,
@@ -170,7 +258,8 @@ ConvertResult _convertInIsolate(_ConvertRequest request) {
   final height = working.height;
   final pixelCount = width * height;
 
-  // 2. Flatten to opaque 0xRRGGBB pixels (composite over white).
+  // 2. Flatten to opaque 0xRRGGBB pixels (composite over white) + optional
+  //    contrast expansion around the per-channel mean.
   final pixels = Uint32List(pixelCount);
   var i = 0;
   for (final p in working) {
@@ -180,15 +269,35 @@ ConvertResult _convertInIsolate(_ConvertRequest request) {
     final b = ((p.b * 255).round().clamp(0, 255) * a + 255 * (255 - a)) ~/ 255;
     pixels[i++] = (r << 16) | (g << 8) | b;
   }
+  if (options.contrastBoost > 0.001) {
+    _applyContrastBoost(pixels, options.contrastBoost);
+  }
 
   // 3. Quantize to a small palette and map every pixel to its nearest color.
   final maxColors = options.maxColors.clamp(2, 48).toInt();
-  final palette = MedianCutQuantizer.quantize(pixels, maxColors);
-  var indices = NearestColorMapper.map(pixels, palette);
+  var palette = MedianCutQuantizer.quantize(pixels, maxColors);
+  var indices = NearestColorMapper.map(pixels, palette,
+      useLab: options.useLabDistance);
+
+  // 3b. Refine palette centers with a few deterministic Lloyd (k-means)
+  //     iterations so the final colors better match the source image.
+  if (options.refineIterations > 0 && palette.length > 1) {
+    final refined = PaletteRefiner.refine(
+      pixels,
+      palette,
+      indices,
+      iterations: options.refineIterations,
+      useLab: options.useLabDistance,
+    );
+    palette = refined;
+    indices = NearestColorMapper.map(pixels, palette,
+        useLab: options.useLabDistance);
+  }
 
   // 4. Remove noise with majority filtering before segmentation.
   for (var pass = 0; pass < options.smoothingPasses; pass++) {
-    indices = MajoritySmoother.smooth(indices, palette.length, width, height);
+    indices = MajoritySmoother.smooth(indices, palette.length, width, height,
+        edgeAware: options.edgeAwareSmoothing);
   }
 
   // 5. Segment into connected regions, absorbing specks that are too small
@@ -304,39 +413,169 @@ _BoxInfo _boxInfo(List<int> px, _Box box) {
   return _BoxInfo(channel, ranges[channel]);
 }
 
+// Contrast expansion helper: gently push each channel away from its mean
+// so near-identical tones separate into distinct regions deterministically.
+void _applyContrastBoost(Uint32List pixels, double boost) {
+  var sumR = 0, sumG = 0, sumB = 0;
+  for (final p in pixels) {
+    sumR += (p >> 16) & 0xFF;
+    sumG += (p >> 8) & 0xFF;
+    sumB += p & 0xFF;
+  }
+  final n = pixels.length;
+  if (n == 0) return;
+  final meanR = sumR / n, meanG = sumG / n, meanB = sumB / n;
+  for (var i = 0; i < n; i++) {
+    final p = pixels[i];
+    int r = (p >> 16) & 0xFF;
+    int g = (p >> 8) & 0xFF;
+    int b = p & 0xFF;
+    r = (meanR + (r - meanR) * (1 + boost)).round().clamp(0, 255).toInt();
+    g = (meanG + (g - meanG) * (1 + boost)).round().clamp(0, 255).toInt();
+    b = (meanB + (b - meanB) * (1 + boost)).round().clamp(0, 255).toInt();
+    pixels[i] = (r << 16) | (g << 8) | b;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// K-means palette refinement
+// ---------------------------------------------------------------------------
+
+/// Deterministic Lloyd-iteration refiner: moves each palette color to the
+/// mean of the pixels currently assigned to it. Empty clusters keep their
+/// previous color, which keeps the result reproducible.
+class PaletteRefiner {
+  static List<int> refine(
+    Uint32List pixels,
+    List<int> palette,
+    Uint8List indices, {
+    required int iterations,
+    bool useLab = true,
+  }) {
+    final n = palette.length;
+    final sums = List<Int64List>.generate(n, (_) => Int64List(3));
+    final counts = Int64List(n);
+    final current = List<int>.of(palette);
+
+    for (var iter = 0; iter < iterations; iter++) {
+      for (var c = 0; c < n; c++) {
+        sums[c][0] = 0;
+        sums[c][1] = 0;
+        sums[c][2] = 0;
+        counts[c] = 0;
+      }
+      for (var i = 0; i < pixels.length; i++) {
+        final p = pixels[i];
+        final bin = indices[i];
+        sums[bin][0] += (p >> 16) & 0xFF;
+        sums[bin][1] += (p >> 8) & 0xFF;
+        sums[bin][2] += p & 0xFF;
+        counts[bin]++;
+      }
+      for (var c = 0; c < n; c++) {
+        if (counts[c] == 0) continue;
+        current[c] = 0xFF000000 |
+            ((sums[c][0] ~/ counts[c]) << 16) |
+            ((sums[c][1] ~/ counts[c]) << 8) |
+            (sums[c][2] ~/ counts[c]);
+      }
+      // Re-assign for the next iteration (and for the caller's final map).
+      for (var i = 0; i < pixels.length; i++) {
+        indices[i] = NearestColorMapper.nearest(pixels[i], current, useLab: useLab);
+      }
+    }
+    return current;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Nearest-color mapping
 // ---------------------------------------------------------------------------
 
 class NearestColorMapper {
-  /// Maps every pixel to the index of its nearest palette color. Distance is
-  /// weighted (2R, 4G, 3B) which approximates human perception.
-  static Uint8List map(Uint32List pixels, List<int> palette) {
+  /// Maps every pixel to the index of its nearest palette color.
+  /// When [useLab] is true uses approximate CIELAB Delta E (perceptual);
+  /// otherwise falls back to weighted RGB (2R,4G,3B).
+  static Uint8List map(Uint32List pixels, List<int> palette, {bool useLab = true}) {
+    if (!useLab) {
+      final out = Uint8List(pixels.length);
+      for (var i = 0; i < pixels.length; i++) out[i] = nearest(pixels[i], palette, useLab: false);
+      return out;
+    }
+    // Precompute palette LAB once.
+    final labPalette = List<_Lab>.generate(palette.length, (j) {
+      final c = palette[j];
+      return _Lab.fromRgb((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+    });
     final out = Uint8List(pixels.length);
     for (var i = 0; i < pixels.length; i++) {
-      out[i] = nearest(pixels[i], palette);
+      final p = pixels[i];
+      final lab = _Lab.fromRgb((p >> 16) & 0xFF, (p >> 8) & 0xFF, p & 0xFF);
+      var best = 0;
+      var bestDist = double.infinity;
+      for (var j = 0; j < labPalette.length; j++) {
+        final d = lab.deltaE(labPalette[j]);
+        if (d < bestDist) { bestDist = d; best = j; }
+      }
+      out[i] = best;
     }
     return out;
   }
 
-  static int nearest(int pixel, List<int> palette) {
+  static int nearest(int pixel, List<int> palette, {bool useLab = true}) {
+    if (palette.length == 1) return 0;
+    if (!useLab) {
+      final r = (pixel >> 16) & 0xFF;
+      final g = (pixel >> 8) & 0xFF;
+      final b = pixel & 0xFF;
+      var best = 0;
+      var bestDist = 1 << 30;
+      for (var j = 0; j < palette.length; j++) {
+        final c = palette[j];
+        final dr = r - ((c >> 16) & 0xFF);
+        final dg = g - ((c >> 8) & 0xFF);
+        final db = b - (c & 0xFF);
+        final dist = dr * dr * 2 + dg * dg * 4 + db * db * 3;
+        if (dist < bestDist) { bestDist = dist; best = j; }
+      }
+      return best;
+    }
     final r = (pixel >> 16) & 0xFF;
     final g = (pixel >> 8) & 0xFF;
     final b = pixel & 0xFF;
+    final lab = _Lab.fromRgb(r, g, b);
     var best = 0;
-    var bestDist = 1 << 30;
+    var bestDist = double.infinity;
     for (var j = 0; j < palette.length; j++) {
       final c = palette[j];
-      final dr = r - ((c >> 16) & 0xFF);
-      final dg = g - ((c >> 8) & 0xFF);
-      final db = b - (c & 0xFF);
-      final dist = dr * dr * 2 + dg * dg * 4 + db * db * 3;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = j;
-      }
+      final plab = _Lab.fromRgb((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+      final d = lab.deltaE(plab);
+      if (d < bestDist) { bestDist = d; best = j; }
     }
     return best;
+  }
+}
+
+// Minimal sRGB → CIELAB helper (D65, approx. Delta E 1976).
+class _Lab {
+  final double l, a, b;
+  const _Lab(this.l, this.a, this.b);
+  factory _Lab.fromRgb(int r, int g, int b) {
+    double rl = r / 255.0, gl = g / 255.0, bl = b / 255.0;
+    rl = rl <= 0.04045 ? rl / 12.92 : math.pow((rl + 0.055) / 1.055, 2.4).toDouble();
+    gl = gl <= 0.04045 ? gl / 12.92 : math.pow((gl + 0.055) / 1.055, 2.4).toDouble();
+    bl = bl <= 0.04045 ? bl / 12.92 : math.pow((bl + 0.055) / 1.055, 2.4).toDouble();
+    final x = rl * 0.4124 + gl * 0.3576 + bl * 0.1805;
+    final y = rl * 0.2126 + gl * 0.7152 + bl * 0.0722;
+    final z = rl * 0.0193 + gl * 0.1192 + bl * 0.9505;
+    const xn = 0.95047, yn = 1.0, zn = 1.08883;
+    double fx(double t) => t > 0.008856 ? math.pow(t, 1/3).toDouble() : (7.787 * t + 16/116);
+    final fx_ = fx(x / xn), fy = fx(y / yn), fz = fx(z / zn);
+    return _Lab(116 * fy - 16, 500 * (fx_ - fy), 200 * (fy - fz));
+  }
+  double deltaE(_Lab o) {
+    final dl = l - o.l, da = a - o.a, db = b - o.b;
+    return dl*dl + da*da + db*db;
   }
 }
 
@@ -347,18 +586,48 @@ class NearestColorMapper {
 class MajoritySmoother {
   /// One 3x3 mode filter pass: each pixel becomes the most common palette
   /// index in its neighborhood (ties keep the current value, so the pass is
-  /// deterministic).
+  /// deterministic). When [edgeAware] is true, border pixels (where the 3x3
+  /// window spans more than one color) are left untouched, preserving detail
+  /// and crisp region edges — this is the key to keeping small features while
+  /// removing isolated speckles.
   static Uint8List smooth(
-      Uint8List indices, int paletteLength, int width, int height) {
+      Uint8List indices, int paletteLength, int width, int height,
+      {bool edgeAware = true}) {
     final counts = List<int>.filled(paletteLength, 0);
     final out = Uint8List(indices.length);
 
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
         final i = y * width + x;
-        for (var c = 0; c < paletteLength; c++) {
-          counts[c] = 0;
+        final cur = indices[i];
+        // Edge-aware: if neighborhood is heterogeneous, keep original to preserve edge.
+        if (edgeAware) {
+          var distinct = 0;
+          var seenMask = 0;
+          // paletteLength <=48 so bitmask fits in 64 bits; for larger palette use set.
+          if (paletteLength <= 64) {
+            for (var dy = -1; dy <= 1; dy++) {
+              final ny = y + dy;
+              if (ny < 0 || ny >= height) continue;
+              for (var dx = -1; dx <= 1; dx++) {
+                final nx = x + dx;
+                if (nx < 0 || nx >= width) continue;
+                final v = indices[ny * width + nx];
+                final bit = 1 << (v % 64);
+                if ((seenMask & bit) == 0) { // approximate for >64 handled below fallback
+                  seenMask |= bit;
+                  distinct++;
+                }
+              }
+            }
+            // If more than 2 distinct colors in 3x3 this is likely an edge/boundary.
+            if (distinct > 2) {
+              out[i] = cur;
+              continue;
+            }
+          }
         }
+        for (var c = 0; c < paletteLength; c++) counts[c] = 0;
         for (var dy = -1; dy <= 1; dy++) {
           final ny = y + dy;
           if (ny < 0 || ny >= height) continue;
@@ -368,7 +637,7 @@ class MajoritySmoother {
             counts[indices[ny * width + nx]]++;
           }
         }
-        var best = indices[i];
+        var best = cur;
         var bestCount = counts[best];
         for (var c = 0; c < paletteLength; c++) {
           if (counts[c] > bestCount) {

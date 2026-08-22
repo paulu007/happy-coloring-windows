@@ -1,0 +1,157 @@
+name: Build Linux & Windows & Publish Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+          # file_picker / path_provider may need additional deps on some distros
+          clang --version
+          cmake --version
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze (non-blocking)
+        run: flutter analyze || true
+
+      - name: Build Linux release
+        run: flutter build linux --release -v
+
+      - name: Create Linux bundle archives
+        run: |
+          set -e
+          BUNDLE="build/linux/x64/release/bundle"
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          # Strip leading v for filenames
+          SAFE_VERSION="${VERSION#v}"
+          if [ "$SAFE_VERSION" = "dev" ] || [ -z "$SAFE_VERSION" ]; then
+            SAFE_VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "Packaging version $SAFE_VERSION"
+          tar -czf "HappyColor-Linux-x64-${SAFE_VERSION}.tar.gz" -C "$BUNDLE" .
+          ls -lh HappyColor-Linux*.tar.gz
+
+          # Optional deb via fpm (best-effort)
+          if command -v gem >/dev/null 2>&1; then
+            sudo gem install --no-document fpm || true
+            if command -v fpm >/dev/null 2>&1; then
+              fpm -s dir -t deb -n happy-color -v "$SAFE_VERSION" \
+                -C "$BUNDLE" . \
+                --name "Happy Color" \
+                --description "Color by number — turn any photo into a coloring page (numbers hidden but detectable)" \
+                --maintainer "Happy Color <noreply@github.com>" \
+                --license "MIT" \
+                --url "https://github.com/${GITHUB_REPOSITORY}" \
+                --prefix /opt/happy-color \
+                || echo "fpm deb packaging failed (non-blocking)"
+              ls -lh *.deb || true
+            fi
+          fi
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HappyColor-Linux
+          path: |
+            HappyColor-Linux-*.tar.gz
+            happy-color_*.deb
+            happy-color-*.deb
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publish Linux to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            HappyColor-Linux-*.tar.gz
+            happy-color_*.deb
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release -v
+
+      - name: Create Windows ZIP
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          if (-not $version -or $version -eq "") { $version = "dev-${{ github.sha }}".Substring(0,12) }
+          $safe = $version.TrimStart('v')
+          if (-not $safe) { $safe = "0.0.0-dev" }
+          $bundle = "build\windows\x64\runner\Release"
+          if (-not (Test-Path $bundle)) { Write-Error "Bundle not found at $bundle"; exit 1 }
+          Compress-Archive -Path "$bundle\*" -DestinationPath "HappyColor-Windows-x64-$safe.zip" -Force
+          Get-ChildItem HappyColor-Windows*.zip | Format-Table Name, Length
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HappyColor-Windows
+          path: HappyColor-Windows-*.zip
+          retention-days: 30
+
+      - name: Publish Windows to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: HappyColor-Windows-*.zip
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

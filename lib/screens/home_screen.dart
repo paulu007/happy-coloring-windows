@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/constants.dart';
 import '../models/coloring_image.dart';
-import '../services/image_service.dart';
 import '../providers/gallery_provider.dart';
-import '../providers/settings_provider.dart';
+import '../services/image_service.dart';
+import '../utils/import_helper.dart';
 import 'gallery_screen.dart';
 import 'settings_screen.dart';
 import 'coloring_screen.dart';
@@ -60,6 +60,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  tooltip: 'Import a photo to color',
+                  onPressed: () => pickAndImportImage(context),
+                ),
+                IconButton(
                   icon: const Icon(Icons.settings),
                   onPressed: () {
                     Navigator.push(
@@ -80,6 +85,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Import banner
+                    _buildImportBanner(),
+
+                    const SizedBox(height: 16),
+
                     // Continue Section
                     _buildContinueSection(),
 
@@ -108,6 +118,66 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildImportBanner() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => pickAndImportImage(context),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.primary.withOpacity(0.4),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Turn any photo into a coloring page',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Import a picture and start painting by number',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildContinueSection() {
     return Consumer<GalleryProvider>(
       builder: (context, gallery, child) {
@@ -117,29 +187,33 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Continue Coloring',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
-                TextButton(
+                TextButton.icon(
                   onPressed: () => _navigateToGallery(GalleryFilter.inProgress),
-                  child: const Text('See All'),
+                  icon: const Icon(Icons.arrow_forward, size: 18),
+                  label: const Text('See All'),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 160,
+              height: 168,
               child: gallery.isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : gallery.images.isEmpty
-                      ? _buildEmptyState('Start your first coloring!')
-                      : ListView.builder(
+                      ? _buildEmptyState(
+                          'No works in progress — import a photo or pick a category below!')
+                      : ListView.separated(
                           scrollDirection: Axis.horizontal,
-                          itemCount: gallery.images.take(5).length,
+                          itemCount: gallery.images.take(8).length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 12),
                           itemBuilder: (context, index) {
                             final image = gallery.images[index];
                             return _buildContinueCard(image, gallery);
@@ -154,14 +228,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildContinueCard(ColoringImageInfo image, GalleryProvider gallery) {
     final progress = gallery.getProgress(image.id);
-    
+
     return GestureDetector(
       onTap: () => _navigateToColoring(image.id),
       child: Container(
         width: 130,
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -178,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(16),
                   ),
@@ -199,9 +273,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     image.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -219,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     '${(progress * 100).toInt()}%',
                     style: TextStyle(
                       fontSize: 10,
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -235,11 +310,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Categories',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 12),
@@ -358,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -385,15 +461,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   Text(
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -481,13 +558,13 @@ class _HomeScreenState extends State<HomeScreen> {
           Icon(
             Icons.palette_outlined,
             size: 48,
-            color: Colors.grey.shade400,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 8),
           Text(
             message,
             style: TextStyle(
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -496,9 +573,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBottomNav() {
-    return BottomNavigationBar(
-      currentIndex: 0,
-      onTap: (index) {
+    return NavigationBar(
+      selectedIndex: 0,
+      onDestinationSelected: (index) {
         switch (index) {
           case 0:
             // Already on home
@@ -511,17 +588,20 @@ class _HomeScreenState extends State<HomeScreen> {
             break;
         }
       },
-      items: const [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.home),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home),
           label: 'Home',
         ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.grid_view),
+        NavigationDestination(
+          icon: Icon(Icons.grid_view_outlined),
+          selectedIcon: Icon(Icons.grid_view),
           label: 'Gallery',
         ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.emoji_events),
+        NavigationDestination(
+          icon: Icon(Icons.emoji_events_outlined),
+          selectedIcon: Icon(Icons.emoji_events),
           label: 'Completed',
         ),
       ],

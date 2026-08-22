@@ -1,7 +1,7 @@
 name: happy_color_app
 description: A color by number app like Happy Color
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,23 +9,29 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # State Management
   provider: ^6.1.1
-  
-  # Local Storage (Windows compatible)
+
+  # Local Storage (Windows/Linux/macOS via FFI)
   path_provider: ^2.1.1
   sqflite_common_ffi: ^2.3.0+4
   shared_preferences: ^2.2.2
-  
+
   # SVG Support
   flutter_svg: ^2.0.9
   path_drawing: ^1.0.1
   xml: ^6.5.0
-  
+
+  # Image decoding for photo -> color-by-number conversion
+  image: ^4.0.0
+
+  # Native file picker (photo import on desktop)
+  file_picker: ^8.0.0
+
   # UI Components
   cupertino_icons: ^1.0.6
-  
+
   # Utilities
   uuid: ^4.2.1
   path: ^1.8.3

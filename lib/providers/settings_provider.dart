@@ -22,8 +22,10 @@ class SettingsProvider extends ChangeNotifier {
   bool _showNumbers = false;
   bool _highlightRegions = true;
   // When true, tapping an unfilled region will auto-select its number **and**
-  // immediately fill it (useful for quick painting and recorder demos).
-  bool _autoFillOnDetect = false;
+  // immediately fill it. This is what lets the app paint with hidden numbers:
+  // the number is detected internally, so the canvas can stay clean (great
+  // for screen recordings) while painting stays automatic.
+  bool _autoFillOnDetect = true;
 
   // Getters
   ThemeMode get themeMode => _themeMode;
@@ -44,7 +46,7 @@ class SettingsProvider extends ChangeNotifier {
     _autoSave = _prefs.getBool(_autoSaveKey) ?? true;
     _showNumbers = _prefs.getBool(_showNumbersKey) ?? false;
     _highlightRegions = _prefs.getBool(_highlightKey) ?? true;
-    _autoFillOnDetect = _prefs.getBool(_autoFillDetectKey) ?? false;
+    _autoFillOnDetect = _prefs.getBool(_autoFillDetectKey) ?? true;
     
     notifyListeners();
   }
@@ -92,8 +94,13 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   /// Toggle auto-fill-on-detect
-  Future<void> toggleAutoFillOnDetect() async {
-    _autoFillOnDetect = !_autoFillOnDetect;
+  Future<void> toggleAutoFillOnDetect() {
+    return setAutoFillOnDetect(!_autoFillOnDetect);
+  }
+
+  /// Set auto-fill-on-detect explicitly (used by the coloring toolbar).
+  Future<void> setAutoFillOnDetect(bool value) async {
+    _autoFillOnDetect = value;
     await _prefs.setBool(_autoFillDetectKey, _autoFillOnDetect);
     notifyListeners();
   }
@@ -106,7 +113,7 @@ class SettingsProvider extends ChangeNotifier {
     _autoSave = true;
     _showNumbers = false;
     _highlightRegions = true;
-    _autoFillOnDetect = false;
+    _autoFillOnDetect = true;
 
     await _prefs.clear();
     notifyListeners();

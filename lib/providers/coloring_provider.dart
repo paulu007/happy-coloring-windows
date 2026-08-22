@@ -237,6 +237,15 @@ class ColoringProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Record the current view transform without notifying listeners. The
+  /// canvas hit-tests through the widget tree (which already applies the
+  /// transform), so zoom/pan gestures don't need to rebuild the screen on
+  /// every frame.
+  void updateViewSilently(double newScale, Offset newOffset) {
+    _scale = newScale;
+    _offset = newOffset;
+  }
+
   /// Reset zoom and pan
   void resetView() {
     _scale = 1.0;
