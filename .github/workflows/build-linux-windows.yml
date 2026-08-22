@@ -22,16 +22,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
-          # file_picker / path_provider may need additional deps on some distros
           clang --version
           cmake --version
+          ninja --version
+          pkg-config --modversion gtk+-3.0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
           channel: stable
           cache: true
+          # ponytail: no flutter-version pin — always use latest stable so
+          # runner toolchain (clang 18 / cmake 3.28 on ubuntu-latest) matches
+          # the engine. Pin only if you need reproducibility.
 
       - name: Enable Linux desktop
         run: flutter config --enable-linux-desktop
@@ -42,18 +45,42 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Regenerate Linux scaffolding if needed
+        run: |
+          # If linux/ was hand-edited or ephemeral is stale, recreate it
+          # without overwriting lib/ or assets.
+          if [ ! -f "linux/CMakeLists.txt" ]; then
+            echo "linux/CMakeLists.txt missing — recreating"
+            flutter create --platforms=linux .
+          else
+            echo "linux/CMakeLists.txt exists, skipping create"
+          fi
+          # Ensure generated plugin files are fresh
+          flutter pub get
+          ls -R linux/flutter || true
+
       - name: Analyze (non-blocking)
         run: flutter analyze || true
 
       - name: Build Linux release
         run: flutter build linux --release -v
 
+      - name: Dump CMake logs on failure
+        if: failure()
+        run: |
+          echo "=== CMakeError.log ==="
+          cat build/linux/x64/release/CMakeFiles/CMakeError.log 2>/dev/null || true
+          echo "=== CMakeOutput.log ==="
+          cat build/linux/x64/release/CMakeFiles/CMakeOutput.log 2>/dev/null || true
+          echo "=== build/linux tree ==="
+          ls -R build/linux 2>/dev/null | head -n 200 || true
+
       - name: Create Linux bundle archives
+        if: success()
         run: |
           set -e
           BUNDLE="build/linux/x64/release/bundle"
           VERSION="${GITHUB_REF_NAME:-dev}"
-          # Strip leading v for filenames
           SAFE_VERSION="${VERSION#v}"
           if [ "$SAFE_VERSION" = "dev" ] || [ -z "$SAFE_VERSION" ]; then
             SAFE_VERSION="0.0.0-${GITHUB_SHA::7}"
@@ -62,7 +89,6 @@ jobs:
           tar -czf "HappyColor-Linux-x64-${SAFE_VERSION}.tar.gz" -C "$BUNDLE" .
           ls -lh HappyColor-Linux*.tar.gz
 
-          # Optional deb via fpm (best-effort)
           if command -v gem >/dev/null 2>&1; then
             sudo gem install --no-document fpm || true
             if command -v fpm >/dev/null 2>&1; then
@@ -80,6 +106,7 @@ jobs:
           fi
 
       - name: Upload Linux artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: HappyColor-Linux
@@ -92,7 +119,7 @@ jobs:
 
       - name: Publish Linux to Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             HappyColor-Linux-*.tar.gz
@@ -111,7 +138,6 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
           channel: stable
           cache: true
 
@@ -124,10 +150,52 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Regenerate Windows scaffolding if needed
+        shell: bash
+        run: |
+          if [ ! -f "windows/CMakeLists.txt" ]; then
+            echo "windows/CMakeLists.txt missing — recreating"
+            flutter create --platforms=windows .
+          fi
+          # Ensure Windows ephemeral is generated (generated_config.cmake is
+          # required by windows/flutter/CMakeLists.txt at configure time)
+          flutter precache --windows || true
+          flutter pub get
+          echo "=== windows/flutter ==="
+          ls -R windows/flutter || true
+          echo "=== ephemeral check ==="
+          ls -la windows/flutter/ephemeral/ 2>&1 | head -n 100 || echo "ephemeral not yet generated (will be created by build)"
+
+      - name: Diagnose Windows toolchain
+        shell: bash
+        run: |
+          cmake --version || true
+          ninja --version || true
+          echo "--- Visual Studio installations ---"
+          if command -v vswhere >/dev/null 2>&1; then vswhere -all -prerelease -products "*" || true; fi
+          ls -d "C:/Program Files/Microsoft Visual Studio/2022/"* 2>/dev/null || true
+          ls -d "C:/Program Files (x86)/Microsoft Visual Studio/2022/"* 2>/dev/null || true
+
       - name: Build Windows release
         run: flutter build windows --release -v
 
+      - name: Dump CMake logs on failure (Windows)
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== CMakeError.log ==="
+          cat build/windows/x64/CMakeFiles/CMakeError.log 2>/dev/null || true
+          find build/windows -name "CMakeError.log" -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null | head -n 500 || true
+          echo "=== CMakeOutput.log ==="
+          cat build/windows/x64/CMakeFiles/CMakeOutput.log 2>/dev/null || true
+          find build/windows -name "CMakeOutput.log" -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null | head -n 500 || true
+          echo "=== build/windows tree (top 200) ==="
+          ls -R build/windows 2>/dev/null | head -n 300 || true
+          echo "=== flutter pub get --verbose (plugin symlinks) ==="
+          ls -R windows/flutter/ephemeral/.plugin_symlinks 2>/dev/null | head -n 100 || echo "no .plugin_symlinks yet"
+
       - name: Create Windows ZIP
+        if: success()
         shell: powershell
         run: |
           $version = "${{ github.ref_name }}"
@@ -140,6 +208,7 @@ jobs:
           Get-ChildItem HappyColor-Windows*.zip | Format-Table Name, Length
 
       - name: Upload Windows artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: HappyColor-Windows
@@ -148,7 +217,7 @@ jobs:
 
       - name: Publish Windows to Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: HappyColor-Windows-*.zip
           fail_on_unmatched_files: false

@@ -1,4 +1,5 @@
 # Miscellaneous
+.opencode/*
 *.class
 *.log
 *.pyc
