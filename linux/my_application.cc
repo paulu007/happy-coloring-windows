@@ -44,7 +44,6 @@ static void my_application_activate(GApplication* application) {
   // App icon: matches linux/com.happycolor.app.desktop Icon field
   gtk_window_set_icon_name(window, "com.happycolor.app");
 
-  g_autoptr(FlView) fl_view = view;
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
